@@ -1,522 +1,171 @@
-# GeoAI Based Urban Heat Island Prediction Using Earth Observation and Explainable Machine Learning
+# Fault Deformation & Seismic Hazard Toolkit
 
-<p align="center">
+![Python](https://img.shields.io/badge/Python-3.10-blue?logo=python&logoColor=white)
+![PyTorch](https://img.shields.io/badge/PyTorch-EE4C2C?logo=pytorch&logoColor=white)
+![XGBoost](https://img.shields.io/badge/XGBoost-blue?logo=xgboost&logoColor=white)
+![ObsPy](https://img.shields.io/badge/ObsPy-seismology-green)
+![LiCSBAS](https://img.shields.io/badge/LiCSBAS-InSAR-orange)
+![GDAL](https://img.shields.io/badge/GDAL-geospatial-lightgrey)
+![License: MIT](https://img.shields.io/badge/License-MIT-yellow)
 
-![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)
-![Remote Sensing](https://img.shields.io/badge/Remote%20Sensing-Landsat%208%2F9-orange.svg)
-![GeoAI](https://img.shields.io/badge/GeoAI-Machine%20Learning-success.svg)
-![XGBoost](https://img.shields.io/badge/XGBoost-Enabled-green.svg)
-![SHAP](https://img.shields.io/badge/Explainable%20AI-SHAP-purple.svg)
-![License](https://img.shields.io/badge/License-MIT-yellow.svg)
+A GeoAI toolkit that turns raw Sentinel-1 satellite radar and public
+seismic data into three things: an automated fault deformation time
+series (InSAR), a short term aftershock forecast (ML), and a denoised
+seismic signal (autoencoder) - all built against one real,
+well documented earthquake sequence: the **2023 Kahramanmaraş
+(Turkey–Syria) earthquake sequence**.
 
-</p>
+An [integration notebook](notebooks/integration_notebook.ipynb) walks
+through all three components together with the synthesis below.
 
-An end-to-end **GeoAI workflow** for predicting **Urban Heat Island (UHI)** intensity using **Landsat satellite imagery**, **machine learning**, and **Explainable Artificial Intelligence (SHAP)**.
+## Why this project
 
-This project integrates **Earth Observation**, **Remote Sensing**, **Geospatial Data Science**, and **Explainable Machine Learning** to predict **Land Surface Temperature (LST)** and generate **Urban Heat Risk** maps for **Nagpur, India**.
+Satellite geodesy and time series deformation analysis, geared toward
+seismic hazard, active fault geodesy, and earthquake imaging research.
 
-The workflow is fully reproducible and organized into **five sequential Jupyter notebooks**, guiding the reader from satellite data acquisition through machine learning model development to GIS-ready spatial prediction products.
+## Target event
 
----
-
-# Project Overview
-
-Urban Heat Islands (UHIs) are one of the most significant environmental consequences of rapid urbanization. Expansion of impervious surfaces, reduction of vegetation cover, and changing landuse patterns increase surface temperatures, affecting human health, infrastructure, energy consumption, and climate resilience.
-
-This project presents a complete **GeoAI framework** that combines Earth Observation with machine learning to investigate urban thermal environments.
-
-The workflow integrates:
-
-* Satellite Remote Sensing
-* Geospatial Data Science
-* Machine Learning
-* Explainable Artificial Intelligence
-* GIS-based Spatial Prediction
-
-The resulting products include high-resolution Land Surface Temperature predictions, Urban Heat Risk classifications, explainable machine learning diagnostics, and GIS-ready raster outputs suitable for environmental planning and decision support.
+**2023 Kahramanmaraş sequence.** Mw 7.8 mainshock near Pazarcık on 6 Feb
+2023, followed ~9 hours later by an Mw 7.5 event near Elbistan. Rupture
+spans ~345 km of the left lateral East Anatolian Fault and ~175 km of
+the Çardak Fault - one of the best instrumented, most studied
+strike slip ruptures in recent history, which makes it possible to
+sanity check results against the published literature.
 
 ---
 
-<p align="center">
-<img src="figures/dashboard.jpg" width="1000">
-</p>
+## 1. InSAR Fault Deformation
 
-<p align="center">
-<b>Figure 1.</b> GeoAI dashboard summarizing vegetation, built-up intensity, predicted land surface temperature, and urban heat risk across Nagpur.
-</p>
+**Data:** [COMET-LiCS Sentinel-1 InSAR Portal](https://comet.nerc.ac.uk/comet-lics-portal/),
+frame `116A_05207_252525` (ascending), covering the Adıyaman/Malatya
+segment of the East Anatolian Fault. Date range: 2023-01-01 to
+2023-05-01.
 
----
+**Method:** Standard [LiCSBAS](https://github.com/comet-licsar/LiCSBAS)
+pipeline — download → multilook (10x10) → coherence-based mask →
+unwrapping QC → loop closure QC → SBAS/NSBAS inversion → velocity std →
+time-series mask → temporal/spatial filtering.
 
-# Why This Project Matters
+**Result:** a clear positive/negative velocity dipole straddling the
+fault trace the expected signature of left lateral strike slip
+rupture, and a time series showing a step like offset bracketing the
+earthquake in opposite directions on each side of the fault, with
+block-to-block divergence of roughly 80–100 mm across the event window.
 
-Urban heat has become an increasingly important environmental and public health challenge worldwide.
+![LOS velocity map showing a positive/negative dipole across the fault](results/figures/velocity_map.png)
 
-Understanding where excessive heat occurs and why can support:
+![Time series comparison across the rupture](results/figures/time_series_comparison.png)
 
-* Climate resilience planning
-* Sustainable urban development
-* Green infrastructure design
-* Environmental monitoring
-* Heat vulnerability assessment
-* Evidence based policy making
+*("mm/yr" on the velocity map is a linear rate fitted across a short,
+earthquake-dominated ~4-month window — it reflects the coseismic jump
+annualized, not a steady long-term tectonic rate.)*
 
-By integrating satellite imagery with interpretable machine learning, this project demonstrates how GeoAI can support urban climate adaptation using freely available Earth Observation data.
+**Limitations:**
+- The 4 Feb 2023 epoch was excluded — every interferogram pair using
+  this date failed loop closure QC, consistent with a coregistration or
+  unwrapping artifact specific to that acquisition, not the earthquake
+  itself. The nearest clean bracketing pair used instead is
+  `20230123_20230216`.
+- Near fault decorrelation immediately after the mainshock is visible
+  and expected physically consistent with coseismic surface
+  disruption, not a processing error.
+- GACOS atmospheric correction was not applied (requires a manual batch
+  request via gacos.net) atmospheric noise has not been removed from
+  the interferograms.
+- Single ascending track only not cross validated against a
+  descending track, and not a validated hazard product.
 
----
+## 2. Aftershock Density Forecaster
 
-# Research Questions
+Binary classification following [DeVries et al. (2018), Nature](https://www.nature.com/articles/s41586-018-0438-y):
+does a given grid cell see ≥1 aftershock in a given time window since
+the mainshock?
 
-This project addresses three primary research questions:
+**Data:** USGS FDSNWS catalog, 30 days post mainshock, 456 events
+(practical completeness ~M3.4 in this window).
 
-1. **How accurately can satellite derived environmental variables predict urban Land Surface Temperature?**
+**Method:** XGBoost classifier on distance from mainshock, grid
+location, and time since mainshock. 0.1° (~11km) spatial grid × 5 time
+windows (0-1d, 1-3d, 3-7d, 7-14d, 14-30d), built as a full grid
+including negative (no-aftershock) examples.
 
-2. **Which environmental variables contribute most strongly to urban heat patterns?**
+**Result:** ROC-AUC 0.933, PR-AUC 0.457 (~16x the 0.028 random baseline
+given class imbalance) the model correctly identifies the
+fault aligned corridor as high risk.
 
-3. **Can Explainable Artificial Intelligence improve the interpretation and transparency of Urban Heat Island prediction models?**
+![Observed vs predicted aftershock probability, 1-3 day window](results/figures/aftershock_forecast_comparison.png)
 
----
+**Limitation:** grid latitude/longitude combined outweigh
+distance from mainshock in feature importance the model partly
+learned this specific fault trace's coordinates rather than a purely
+general distance decay relationship. Expected for a single event proof
+of concept; the model wouldn't generalize to a different earthquake
+without retraining.
 
-# Study Area
+## 3. Seismic Waveform Denoiser
 
-**Nagpur, Maharashtra, India**
+**Data:** real waveforms from 3 stations (GE.EIL, IU.ANTO, IU.GNI) near
+the epicenter, pulled via ObsPy/EarthScope.
 
-Nagpur serves as an ideal case study because of its:
+**Method:** small 1D convolutional autoencoder (PyTorch). Genuinely
+paired noisy/clean recordings don't exist for this use case, so
+training pairs are synthetic: real waveforms cut into overlapping
+windows, with randomized strength Gaussian noise added as the model
+input and the real window as the reconstruction target standard
+practice when paired data isn't available.
 
-* Rapid urban expansion
-* Extreme seasonal temperature variability
-* Diverse land cover
-* Increasing impervious surface development
-* High Urban Heat Island potential
+**Result:** 12.08 dB mean SNR improvement on held-out test windows
+(-6.61 dB noisy input → +5.47 dB denoised output).
 
-These characteristics provide an excellent environment for evaluating machine learning models designed to predict urban thermal patterns.
+![Denoising before/after comparison on three example windows](results/figures/denoising_before_after.png)
 
----
-
-<p align="center">
-<img src="figures/study_area.jpg" width="700">
-</p>
-
-<p align="center">
-<b>Figure 2.</b> Municipal boundary of Nagpur, Maharashtra, India.
-</p>
-
----
-
-# Earth Observation Dataset
-
-The project utilizes openly available satellite imagery obtained through the **Microsoft Planetary Computer**.
-
-### Primary Dataset
-
-* Landsat 8/9 Collection 2 Level-2 Surface Reflectance
-
-### Derived Environmental Variables
-
-* **Land Surface Temperature (LST)**
-* **Normalized Difference Vegetation Index (NDVI)**
-* **Normalized Difference Built-up Index (NDBI)**
-* **Normalized Difference Water Index (NDWI)**
-
-These variables represent vegetation, urban development, moisture conditions, and surface thermal characteristics used for machine learning.
-
----
-
-# End-to-End GeoAI Workflow
-
-```text
-Study Area Definition
-        │
-        ▼
-Satellite Data Acquisition
-        │
-        ▼
-Remote Sensing Processing
-        │
-        ▼
-Feature Engineering
-(NDVI • NDBI • NDWI • LST)
-        │
-        ▼
-Exploratory Spatial Data Analysis
-        │
-        ▼
-Machine Learning
-(Random Forest & XGBoost)
-        │
-        ▼
-Explainable AI (SHAP)
-        │
-        ▼
-Spatial Prediction
-        │
-        ▼
-Urban Heat Risk Mapping
-```
----
-
-# Repository Structure
-
-```text
-urban-heat-geoai/
-│
-├── notebooks/
-│   ├── 01_Study_Area_and_Project_Overview.ipynb
-│   ├── 02_Data_Acquisition_and_Feature_Engineering.ipynb
-│   ├── 03_Exploratory_Spatial_Data_Analysis.ipynb
-│   ├── 04_Machine_Learning_Explainable_AI.ipynb
-│   └── 05_GeoAI_Prediction_and_Spatial_Deployment.ipynb
-│
-├── data/
-│   ├── raw/
-│   └── processed/
-│
-├── models/
-│
-├── predictions/
-│
-├── figures/
-│
-├── README.md
-├── requirements.txt
-├── LICENSE
-└── .gitignore
-```
+**Limitation:** only 5 raw traces from 3 stations were available via
+EarthScope's public archive for this event (near field Turkish network
+data isn't mirrored there) this demonstrates the technique works, not
+a validated denoiser for arbitrary stations or events.
 
 ---
 
-# Notebook Overview
-
-## Notebook 1 — Study Area & Project Overview
-
-Introduces the research problem, study area, Earth Observation datasets, and complete GeoAI workflow.
-
-**Major Tasks**
-
-* Project overview
-* Research questions
-* Study area definition
-* Earth Observation datasets
-* Workflow overview
-
----
-
-## Notebook 2 — Data Acquisition & Feature Engineering
-
-Acquires Landsat imagery from the Microsoft Planetary Computer and derives environmental predictor variables.
-
-**Major Tasks**
-
-* Landsat image retrieval
-* Cloud filtering
-* Annual median composite generation
-* Feature engineering
-
-Derived features include:
-
-* Land Surface Temperature (LST)
-* NDVI
-* NDBI
-* NDWI
-
----
-
-## Notebook 3 — Exploratory Spatial Data Analysis
-
-Builds the machine learning dataset and investigates relationships between environmental variables and urban temperature.
-
-**Major Tasks**
-
-* Raster validation
-* Dataset creation
-* Descriptive statistics
-* Exploratory analysis
-* Correlation analysis
-* Spatial relationship assessment
-
-<p align="center">
-<img src="figures/heatmap.png" width="700">
-</p>
-
-<p align="center">
-<b>Figure 4.</b> Correlation matrix illustrating relationships between environmental variables and Land Surface Temperature.
-</p>
-
----
-
-## Notebook 4 — Machine Learning & Explainable AI
-
-Develops, evaluates, and interprets machine learning models for predicting Land Surface Temperature.
-
-Models evaluated:
-
-* Random Forest Regressor
-* XGBoost Regressor
-
-Evaluation metrics include:
-
-* R²
-* MAE
-* RMSE
-* Residual Analysis
-* Feature Importance
-
-Explainability is achieved using SHAP to understand the contribution of each predictor variable to model predictions.
----
-
-# Explainable Artificial Intelligence (SHAP)
-
-Traditional machine learning models often function as "black boxes," making it difficult to understand how individual variables influence predictions. To improve transparency, this project integrates **SHapley Additive exPlanations (SHAP)** for model interpretation.
-
-The SHAP analysis provides both **global** and **local** explanations of the trained model by quantifying the contribution of each predictor to the predicted Land Surface Temperature.
-
-The explainability workflow includes:
-
-* Global feature importance
-* SHAP summary plots
-* SHAP dependence plots
-* Waterfall plots
-* Force plots
-
-These analyses help verify that the model's behaviour aligns with established urban climate principles.
-
-<p align="center">
-<img src="figures/shap_summary-plot.png" width="850">
-</p>
-
-<p align="center">
-<b>Figure 5.</b> SHAP summary plot showing the contribution of NDVI, NDBI, and NDWI to predicted Land Surface Temperature.
-</p>
-
----
-
-# Results
-
-The trained machine learning model was deployed across the Nagpur study area to generate continuous predictions of **Land Surface Temperature (LST)** and classify urban heat into discrete risk categories.
-
-## Key Results at a Glance
-
-| Output               | Description                                             |
-| ---------------------| ------------------------------------------------------- |
-| Predicted LST        | Continuous Land Surface Temperature prediction          |
-| Heat Risk Map        | Five-level Urban Heat Risk classification               |
-| Explainable AI       | SHAP-based interpretation of model predictions          |
-| Correlation Analysis | Statistical relationships among environmental variables |
-| GIS Outputs          | GeoTIFF rasters ready for GIS analysis                  |
-| Dashboard            | Integrated GeoAI visualization of model outputs         |
-
----
-
-<p align="center">
-<img src="figures/comparison.png" width="950">
-</p>
-
-<p align="center">
-<b>Figure 6.</b> Predicted Land Surface Temperature (left) and corresponding Urban Heat Risk classification (right).
-</p>
-
----
-
-<p align="center">
-<img src="figures/dashboard.png" width="1000">
-</p>
-
-<p align="center">
-<b>Figure 7.</b> Integrated GeoAI dashboard summarizing environmental predictors and prediction outputs.
-</p>
-
----
-
-# Key Findings
-
-The analysis identified several important spatial relationships between environmental variables and urban thermal patterns.
-
-### Major Findings
-
-* **Built-up intensity (NDBI)** was the strongest predictor of urban surface temperature.
-* **Vegetation (NDVI)** consistently reduced predicted temperatures, demonstrating its cooling influence.
-* **Surface moisture (NDWI)** contributed additional environmental information but had a smaller influence than vegetation and built-up intensity.
-* Explainable AI confirmed that the machine learning model behaves consistently with established urban climate theory.
-* The workflow successfully produced GIS ready prediction products suitable for environmental planning and urban heat assessment.
-
----
-
-# Technologies Used
-
-## Programming
-
-* Python
-
-## Geospatial Analysis
-
-* GeoPandas
-* Rasterio
-* Rioxarray
-* Xarray
-* Stackstac
-* Shapely
-* OSMnx
-
-## Machine Learning
-
-* Scikit-learn
-* XGBoost
-* SHAP
-
-## Earth Observation
-
-* Microsoft Planetary Computer
-* STAC API
-* Landsat 8/9 Collection 2 Level-2
-
-## Visualization
-
-* Matplotlib
-* Plotly
-
----
-
-# Installation
-
-Clone the repository:
+## Synthesis
+
+Each component substitutes a cheap, wide area, publicly available
+signal for something that traditionally requires dense in situ
+instrumentation: InSAR in place of discrete GNSS point measurements,
+the aftershock forecaster in place of expert manual hazard zoning
+built from catalog data alone, and the denoiser extending the
+effective range of existing seismic stations without new hardware.
+None of these alone is a complete hazard monitoring system together,
+they sketch a workflow where wide area, low cost signals do real
+diagnostic work that would otherwise depend on sparse, expensive
+point instrumentation.
+
+## Reproducing this
 
 ```bash
-git clone https://github.com/ShreyaJari/urban-heat-geo.git
+# InSAR (requires LiCSBAS cloned separately: github.com/comet-licsar/LiCSBAS)
+conda env create -f environment.yml
+conda activate licsbas
+pip install torch "numpy<2"   # see note below
+python3 LiCSBAS/bin/LiCSBAS01_get_geotiff.py -f 116A_05207_252525 -s 20230101 -e 20230501
+# ... full LiCSBAS step sequence, then:
+python3 scripts/plot_deformation.py
+
+# Aftershock forecaster
+python3 scripts/fetch_aftershocks.py
+python3 scripts/build_features.py
+python3 scripts/train_aftershock_model.py
+
+# Denoiser
+python3 scripts/fetch_waveforms.py
+python3 scripts/train_denoiser.py
 ```
 
-Navigate to the project directory:
+**Note (macOS):** the denoiser requires `torch` and `numpy<2` installed
+via pip alongside the conda environment (not in `environment.yml` by
+default), and may need `export KMP_DUPLICATE_LIB_OK=TRUE` set to avoid
+an OpenMP conflict between pip-installed PyTorch and the conda-forge
+scientific stack.
 
-```bash
-cd urban-heat-geoai
-```
+## License
 
-Install the required dependencies:
-
-```bash
-pip install -r requirements.txt
-```
-
----
-
-# Usage
-
-Run the notebooks sequentially:
-
-1. **Notebook 1:** Study Area & Project Overview
-2. **Notebook 2:** Data Acquisition & Feature Engineering
-3. **Notebook 3:** Exploratory Spatial Data Analysis
-4. **Notebook 4:** Machine Learning & Explainable AI
-5. **Notebook 5:** GeoAI Spatial Deployment
-
-Each notebook builds upon the outputs generated in the previous notebook.
-
----
-
-# Generated Outputs
-
-The workflow produces the following outputs:
-
-* Land Surface Temperature raster (`predicted_lst.tif`)
-* Urban Heat Risk raster (`heat_risk_classes.tif`)
-* Machine learning models
-* Prediction summary tables
-* GIS ready GeoTIFF files
-* SHAP explainability plots
-
----
-
-# Future Improvements
-
-Potential extensions of this work include:
-
-* Multi temporal Urban Heat Island monitoring
-* Integration of Sentinel-2 imagery for higher spatial resolution
-* Incorporation of meteorological variables (air temperature, humidity, wind speed)
-* Inclusion of urban morphology indicators such as building height, road density, and population density
-* Deep learning approaches (CNNs, U-Net)
-* Interactive Web GIS deployment
-* Real time environmental monitoring using cloud computing platforms
-
----
-
-# Skills Demonstrated
-
-This project demonstrates expertise in:
-
-* Earth Observation
-* Remote Sensing
-* Geographic Information Systems (GIS)
-* Geospatial Data Science
-* Machine Learning
-* Explainable Artificial Intelligence (SHAP)
-* Spatial Statistics
-* Urban Climate Analysis
-* Python Programming
-* Raster Processing
-* Satellite Image Analysis
-* Environmental Data Analytics
-
----
-
-# Citation
-
-If you use this repository in your research or teaching, please cite it as:
-
-```text
-Jariwala, S. (2026).
-
-GeoAI-Based Urban Heat Island Prediction Using Earth Observation
-and Explainable Machine Learning.
-
-GitHub Repository:
-https://github.com/ShreyaJari/urban-heat-geo
-```
-
----
-
-# Acknowledgements
-
-This project utilizes open datasets and open source software from the following organizations and communities:
-
-* Microsoft Planetary Computer
-* Landsat 8/9 Collection 2 Level-2
-* OpenStreetMap
-* Scikit-learn
-* XGBoost
-* SHAP
-* GeoPandas
-* Rasterio
-* Stackstac
-* Xarray
-
-Their contributions have made reproducible geospatial and machine learning research more accessible to the scientific community.
-
----
-
-# Author
-
-**Shreya Jariwala**
-
-**M.S. GeoData Science**
-
-**Geodata Consultant**
-
-This repository was developed as part of my GeoAI portfolio, demonstrating the integration of Earth Observation, geospatial analytics, machine learning, and Explainable AI for urban climate applications.
-
-**Connect with me**
-
-* LinkedIn: *(https://www.linkedin.com/in/shreya-jariwala-61681a171/)*
-* GitHub: https://github.com/ShreyaJari
-
----
-
-# License
-
-This project is licensed under the **MIT License**.
-
-See the `LICENSE` file for additional details.
-
----
-
-## If you found this project useful, consider giving the repository a star!
-
-Feedback, suggestions, and contributions are always welcome.
+MIT — see [LICENSE](LICENSE).
