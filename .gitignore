@@ -1,0 +1,28 @@
+# Raw/intermediate LiCSBAS data - large, reproducible from PROGRESS.md commands
+LiCSBAS/GEOC/
+LiCSBAS/GEOCml10/
+LiCSBAS/GEOCml10mask/
+LiCSBAS/TS_GEOCml10mask/
+LiCSBAS/*.log
+
+# Raw seismic waveforms and USGS catalog - reproducible via fetch scripts
+data/waveforms/
+data/*.csv
+
+# Standard Python/Jupyter noise
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.DS_Store
+
+# The LiCSBAS tool itself, if you cloned it inside this repo - it's a
+# separate open-source project, not your code. Better as a documented
+# dependency than a vendored copy.
+LiCSBAS/bin/
+LiCSBAS/LiCSBAS_lib/
+LiCSBAS/*.py
+LiCSBAS/
+
+# Internal working notes and draft outreach copy - kept local, not for public repo
+PROGRESS.md
+outreach_summary.md
