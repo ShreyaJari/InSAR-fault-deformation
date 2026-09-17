@@ -1,0 +1,24 @@
+cff-version: 1.2.0
+message: "If you use this software or its results, please cite it as below."
+title: "Fault Deformation & Seismic Hazard Toolkit"
+authors:
+  - family-names: "Jariwala"
+    given-names: "Shreya"
+    orcid: "https://orcid.org/[your ORCID iD]"
+version: "1.0.0"
+date-released: "[YYYY-MM-DD, matches your GitHub release date]"
+url: "https://github.com/ShreyaJari/InSAR-fault-deformation"
+repository-code: "https://github.com/ShreyaJari/InSAR-fault-deformation"
+license: MIT
+keywords:
+  - geoai
+  - remote-sensing
+  - earth-observation
+  - insar
+  - aftershock-forecasting
+  - seismic-denoising
+abstract: >
+  A GeoAI toolkit turning Sentinel-1 radar and public seismic data into a
+  fault deformation time series, a short-term aftershock forecast, and a
+  denoised seismic signal, built against the 2023 Kahramanmaraş
+  (Turkey-Syria) earthquake sequence.
